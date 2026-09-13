@@ -8,7 +8,7 @@ Source repositories keep their code, engines, tests and private archives. They p
 
 ## What is implemented
 
-A source workflow builds/tests its game. Its successful main run starts the source's `Publish browser output` workflow, which calls the reviewed common action at an immutable commit. The action verifies the exact run and source ancestry, downloads its exact public artifact ID, reads `web-publish.json` from the tested source SHA, stages only selected files, and checks the actual `/web/<site>/` prefix in Chromium. Only then does it promote the owned folder.
+A registered source workflow builds and tests an approved publish candidate. Its successful trusted main run starts the source's `Publish browser output` workflow, which calls the reviewed common action at an immutable commit. The action verifies the exact run and source ancestry, downloads its exact public artifact ID, reads `web-publish.json` from the tested source SHA, stages only selected files, and checks the actual `/web/<site>/` prefix in Chromium. Only then does it promote the owned folder. The registry chooses the producer workflow deliberately: for most games that is a verification build; The Keepers intentionally requires its accepted source-prerelease workflow so an ordinary development Web build cannot become the public release.
 
 The publisher can change only `site/<registered-id>/**` and `releases/<registered-id>.json`. It retries real Git conflicts by fetching current main and reapplying only its own output. It never force-pushes. Older source releases cannot overwrite newer accepted ones. Duplicate source SHA/digest is a no-op. Failed builds leave accepted bytes intact.
 
@@ -16,14 +16,14 @@ The destination Pages workflow assembles all current accepted folders into `_sit
 
 The credential is restricted to this repository, but **GitHub does not grant Contents write by subdirectory**. Folder ownership is enforced by the reviewed helper and tests for trusted producers, not a sandbox against malicious maintainers who possess the destination credential. Do not grant it to untrusted repositories.
 
-| Site ID / public folder | Source repository | Source build | Exact artifact |
+| Site ID / public folder | Source repository | Registered producer workflow | Exact artifact |
 | --- | --- | --- | --- |
 | `little-lines` | `AxiomsAwake/LittleLines` | `verify.yml` | `public-site` |
 | `axis` | `AxiomsAwake/InterdimTicTacToe` | `verify.yml` | `axis-candidate`, selected standalone files only |
 | `romi16` | `AxiomsAwake/Romi16` | `ci-cd.yml` | `romi16-site-<sha>` |
 | `earth-sim` | `AxiomsAwake/CompBioEarthSim` | `ci.yml` | `compbio-earth-sim-<sha>` |
 | `crispery-room` | `AxiomsAwake/CrisperyRoom` | `game.yml` | Selected player/model from `reusable-escape-room-v3` |
-| `the-keepers` | `AxiomsAwake/TheKeepers` | `web-build.yml` | `public-web` |
+| `the-keepers` | `AxiomsAwake/TheKeepers` | `release.yml` (`Playable prerelease`) | `public-web` |
 | `living-worlds` | `AxiomsAwake/LivingWorlds` | Reserved, disabled | Requires a dedicated approved `public-web` package |
 
 Only accepted active releases appear in the catalogue. A registry entry is not a claim of a live release. LivingWorlds' private concept handbook/source archive is deliberately not published.
@@ -78,7 +78,7 @@ Retain these settings for smooth operation:
 
 - In **web → Settings → Pages**, the source is **GitHub Actions**, not a branch/folder builder. No custom domain is necessary.
 - The `github-pages` environment must permit `main`. Recurring human deployment approval would intentionally interrupt automatic publication; do not add it unless that is desired. The workflow declares `pages: write` and `id-token: write` only where needed.
-- Actions policy must permit the pinned `AxiomsAwake/web` action, its referenced GitHub actions, and existing game build actions. Do not enable secrets for untrusted pull requests. Publication admits only successful trusted main builds.
+- Actions policy must permit the pinned `AxiomsAwake/web` action, its referenced GitHub actions, and existing game build actions. Do not enable secrets for untrusted pull requests. Publication admits only successful trusted main producer runs registered for that site.
 - Any `web/main` ruleset must permit the publishing identity's non-force commits. If required-PR rules are added, use a narrowly appropriate App bypass or redesign the promotion permission; do not disable all protections or grant source workflows administrative power. Management operations also need permission for their own GitHub Actions identity to commit.
 - GitHub-hosted runners serve the central deployment and most sources. Little Lines intentionally retains its ordinary-user **self-hosted** source build/publish policy. Its runner/group must be authorized for the transferred `AxiomsAwake/LittleLines` repository, have Python 3.10+ and venv plus browser prerequisites, and retain `RUNNER_TOOL_CACHE`. The shared action never installs system dependencies or elevates privileges on self-hosted runners.
 - Optional variable `WEB_BASE_URL` overrides the public base URL for producer live checks. Leave it unset for the default Pages URL. A domain change is a serving change, not a new public repository requirement.
@@ -87,9 +87,9 @@ The implementation connection can edit source/workflows and inspect runs, but it
 
 ## First publication and retries
 
-Push a relevant main change after setup, or use a successful retained source run that already contains `web-publish.json`. Normal updates publish automatically. No release PR, tag or second manual click is required after onboarding.
+Use the producer workflow registered for that site, or a successful retained run that already contains `web-publish.json`. For producers whose registered workflow is an ordinary verification build, normal accepted main updates can publish automatically. **The Keepers is intentionally different:** ordinary `Verify browser export` runs are evidence only; public promotion starts only after an explicit successful `Playable prerelease` source-release run has created the immutable GitHub source prerelease and retained its exact `public-web` artifact.
 
-After a credential/network fix, rerun the failed **Publish browser output** job. Alternatively select that workflow's **Run workflow**, keep branch `main`, and enter the **successful source build run ID** (not the failing publication run ID). This reuses its exact artifact; it does not rebuild the game. If an artifact expired, make a fresh source build. An older source run that predates the publication manifest is deliberately not eligible.
+After a credential/network fix, rerun the failed **Publish browser output** job. Alternatively select that workflow's **Run workflow**, keep branch `main`, and enter the **successful registered producer run ID** (not the failing publication run ID). This reuses its exact artifact; it does not rebuild the game or rewrite its source release. If an artifact expired, make a fresh eligible producer run. An older source run that predates the publication manifest or no longer matches the registry is deliberately not eligible.
 
 A source build failure, missing artifact, path error, browser failure or missing credential is reported as a failure, never silently described as published. `published` means committed to `web`; the following serving check must show `live` or an explicitly newer/restore disposition before calling it served. After a prolonged Pages failure, rerun the destination deployment and then the source publication job if a fresh verified report is needed.
 
@@ -130,7 +130,7 @@ In the source, produce a tested artifact and add `web-publish.json`:
 
 Use the `.` mapping only for an explicitly public-only artifact. Mixed CI archives need explicit file mappings, as in AXIS and CrisperyRoom. Supporting notices can be selected with `source_files` from the exact tested source SHA. All games need `index.html` and complete runtime-required files. Test at the eventual subfolder; relative assets are preferable. `smoke` checks are additional startup/declared interaction/reload checks, not replacements for game tests or physical-device certification.
 
-Copy a working source publication wrapper, change its source workflow name and site ID, and pin the shared action to a reviewed web commit that contains the new registry entry. Grant that source its publishing credential. Ordinary future main releases then need no host-side intervention. The action is deliberately version-pinned; changes to shared code or new registry entries require a reviewed pin update, not a moving unreviewed reference.
+Copy a working source publication wrapper, change its source workflow name and site ID, and pin the shared action to a reviewed web commit that contains the new registry entry. Grant that source its publishing credential. Ordinary future eligible producer runs then need no host-side intervention. The action is deliberately version-pinned; changes to shared code or new registry entries require a reviewed pin update, not a moving unreviewed reference.
 
 Deliberately public JS/HTML/scripts, images, models, audio and downloadable artifacts are legitimate. Do not copy entire private checkouts, original room photos, research/session archives, secrets, developer source maps or mixed evidence wholesale. Preserve each game's actual credits/license notices. There is no new umbrella game license here.
 
@@ -158,7 +158,7 @@ Checked 2026-09-09; configuration UI and plan entitlements may change.
 - GitHub App authentication in Actions: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/making-authenticated-api-requests-with-a-github-app-in-a-github-actions-workflow
 - Actions secrets and private-repository organization-secret limits: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets
 - GITHUB_TOKEN scope and workflow-trigger exceptions: https://docs.github.com/en/actions/concepts/security/github_token
-- Fine-grained personal access tokens: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
+- Fine-grained personal access tokens: https://docs.github.com/en/authentication/keeping-your-personal-access-tokens
 - Custom Pages workflows: https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages
 - Pages limits: https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits
 - Large files: https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github
